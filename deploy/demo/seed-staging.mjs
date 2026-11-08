@@ -5,6 +5,14 @@
  *
  *   npm run demo:seed -- --env staging            load everything
  *   npm run demo:seed -- --env staging --only venues,equipment
+ *   npm run demo:seed -- --env staging --reset     put every example back (see below)
+ *
+ * --reset retires the demo before seeding: every live event of the two demo organisers is cancelled
+ * through the API, with the reason RESET_REASON, which releases its bookings, holds and equipment (F4)
+ * and leaves its history intact (ADR-0007: the history is append-only, so nothing is deleted), and
+ * every active venue block is removed. Then each example is created again at its stage. The "Reset
+ * staging demo data" workflow runs it from the Actions tab, with --from-environment, which reads the
+ * connection details from the job's environment instead of the secrets file.
  *
  * It uses the application's own API, signed in as the seeded accounts, so the state machines, the
  * history, the outbox and the notifications are the real ones. The only SQL is the three extra
@@ -21,6 +29,7 @@
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
+import { pathToFileURL } from "node:url";
 import postgres from "postgres";
 
 // ---------------------------------------------------------------------------------------------
@@ -33,11 +42,13 @@ const SEED_PASSWORD = "ConnectSphere-Test-1234!";
 const DEFAULT_ENV_FILE = path.join(os.homedir(), "connectsphere-secrets", "staging.env");
 
 function parseArgs(argv) {
-  const args = { env: null, only: null, envFile: DEFAULT_ENV_FILE };
+  const args = { env: null, only: null, envFile: DEFAULT_ENV_FILE, reset: false, fromEnvironment: false };
   for (let i = 0; i < argv.length; i++) {
     if (argv[i] === "--env") args.env = argv[++i];
     else if (argv[i] === "--only") args.only = new Set(String(argv[++i]).split(","));
     else if (argv[i] === "--env-file") args.envFile = argv[++i];
+    else if (argv[i] === "--reset") args.reset = true;
+    else if (argv[i] === "--from-environment") args.fromEnvironment = true;
     else throw new Error(`Unknown argument ${argv[i]}`);
   }
   return args;
@@ -53,17 +64,22 @@ function readEnvFile(file) {
   return values;
 }
 
+export class Refused extends Error {}
+
 function refuse(reason) {
-  console.error(`REFUSED: ${reason}`);
-  process.exit(2);
+  throw new Refused(reason);
 }
 
-function loadStagingConfig(args) {
+export function loadStagingConfig(args, environment = process.env) {
   if (args.env !== "staging") refuse("pass --env staging. This script only ever targets staging.");
-  const env = readEnvFile(args.envFile);
-  for (const key of ["DB_PASSWORD", "DATABASE_URL", "SUPABASE_URL", "SUPABASE_ANON_KEY", "SUPABASE_SERVICE_ROLE_KEY"]) {
-    if (!env[key]) refuse(`${key} is missing from the env file.`);
+  const env = args.fromEnvironment ? environment : readEnvFile(args.envFile);
+  const where = args.fromEnvironment ? "the environment" : "the env file";
+  for (const key of ["DATABASE_URL", "SUPABASE_URL", "SUPABASE_ANON_KEY", "SUPABASE_SERVICE_ROLE_KEY"]) {
+    if (!env[key]) refuse(`${key} is missing from ${where}.`);
   }
+  // The secrets file keeps the password apart; a GitHub secret holds the URL with it filled in.
+  const placeholder = env.DATABASE_URL.includes("[YOUR-PASSWORD]");
+  if (placeholder && !env.DB_PASSWORD) refuse(`DB_PASSWORD is missing from ${where}.`);
   let supabaseHost;
   let dbUser;
   try {
@@ -79,7 +95,7 @@ function loadStagingConfig(args) {
     supabaseUrl: env.SUPABASE_URL,
     anonKey: env.SUPABASE_ANON_KEY,
     serviceKey: env.SUPABASE_SERVICE_ROLE_KEY,
-    databaseUrl: env.DATABASE_URL.replace("[YOUR-PASSWORD]", encodeURIComponent(env.DB_PASSWORD)),
+    databaseUrl: placeholder ? env.DATABASE_URL.replace("[YOUR-PASSWORD]", encodeURIComponent(env.DB_PASSWORD)) : env.DATABASE_URL,
   };
 }
 
@@ -365,16 +381,61 @@ async function markUnavailable(key, type) {
 // ---------------------------------------------------------------------------------------------
 const ORDER = ["DRAFT", "SUBMITTED", "UNDER_REVIEW", "AWAITING_CLARIFICATION", "APPROVED", "PLANNING", "SAFETY_REVIEW", "CONFIRMED"];
 const eventsByName = new Map();
+/** Every event of the two demo organisers, as loadEvents last read them. */
+let allEvents = [];
+export const RESET_REASON = "Demo reset: retired so the examples could be seeded again.";
+const FINAL = ["CANCELLED", "REJECTED", "COMPLETED"];
+
+/**
+ * Whether an existing event can stand for its example: one still in progress, or one that ended the way
+ * its example does (cancelled for the example's own reason, or rejected). Anything else, such as an
+ * example someone cancelled while rehearsing or one retired by --reset, is passed over, so the
+ * example is created again.
+ */
+export function reusable(event, scenario) {
+  if (!FINAL.includes(event.status)) return true;
+  if (!scenario) return false;
+  if (event.status === "CANCELLED") return scenario.stage === "CANCELLED" && event.cancellationReason === scenario.cancellation;
+  if (event.status === "REJECTED") return scenario.stage === "REJECTED";
+  return false;
+}
 
 async function loadEvents() {
   eventsByName.clear();
+  allEvents = [];
+  const scenarios = new Map(SCENARIOS.map((spec) => [spec.name, spec]));
   for (const who of ["organiser", "organiser2"]) {
     let cursor = null;
     do {
       const page = await must(who, "GET", `/event/api/v1/events?limit=100${cursor ? `&cursor=${encodeURIComponent(cursor)}` : ""}`);
-      for (const e of page.items ?? []) eventsByName.set(e.name, { ...e, owner: who });
+      for (const e of page.items ?? []) {
+        const ev = { ...e, owner: who };
+        allEvents.push(ev);
+        if (reusable(ev, scenarios.get(ev.name)) && !eventsByName.has(ev.name)) eventsByName.set(ev.name, ev);
+      }
       cursor = page.nextCursor;
     } while (cursor);
+  }
+}
+
+/** --reset: cancel every live event of the demo organisers, releasing what it holds (F4). Nothing is deleted. */
+async function retireLiveEvents() {
+  for (const ev of allEvents.filter((e) => !FINAL.includes(e.status))) {
+    const r = await call(ev.owner, "POST", `/event/api/v1/events/${ev.id}/cancellation`, { reason: RESET_REASON });
+    if (r.status === 200 || r.status === 201) bump("created", "events retired");
+    else stats.skipped.push(`Retiring ${ev.reference ?? ev.name}: answered ${r.status} ${r.body?.error?.code ?? ""}`.trim());
+  }
+}
+
+/** --reset: remove every active block at the demo venues; the example block is recorded again later. */
+async function removeVenueBlocks() {
+  for (const venueId of Object.values(venueIds)) {
+    const blocks = await must("venuestaff", "GET", `/venue/api/v1/venues/${venueId}/unavailability`);
+    for (const block of (blocks.items ?? []).filter((b) => !b.status || b.status === "ACTIVE")) {
+      const r = await call("venuestaff", "POST", `/venue/api/v1/venues/${venueId}/unavailability/${block.id}/remove`, undefined);
+      if (r.status === 200 || r.status === 201) bump("created", "venue blocks removed");
+      else stats.skipped.push(`Removing a block: answered ${r.status} ${r.body?.error?.code ?? ""}`.trim());
+    }
   }
 }
 
@@ -742,8 +803,12 @@ async function waitFor(label, fn, tries = 40) {
 
 async function openForRegistration(spec, ev) {
   if (spec.highDemand) {
-    const r = await call(ev.owner, "PUT", `/event/api/v1/events/${ev.id}/high-demand`, { highDemand: true });
-    if (r.status === 404) stats.skipped.push("High-demand flag: the deployed API does not have it yet");
+    const current = await fresh(ev);
+    if (!current.highDemand) {
+      const r = await call(ev.owner, "PUT", `/event/api/v1/events/${ev.id}/high-demand`, { highDemand: true }, { "If-Match": `"${current.version}"` });
+      if (r.status === 200) bump("created", "high-demand flags");
+      else stats.skipped.push(`${spec.name}: the high-demand flag answered ${r.status} ${r.body?.error?.code ?? ""}`.trim());
+    }
   }
   // The registration service learns of the event and its seats from Kafka, so wait for them.
   const listed = await waitFor(`${spec.name} to reach the registration service`, async () => {
@@ -798,12 +863,18 @@ async function main() {
   const args = parseArgs(process.argv.slice(2));
   config = loadStagingConfig(args);
   const wants = (phase) => !args.only || args.only.has(phase);
-  console.log(`Seeding staging (project ${STAGING_REF}) through ${STAGING_API_HOST}`);
+  console.log(`Seeding staging (project ${STAGING_REF}) through ${STAGING_API_HOST}${args.reset ? ", after a reset" : ""}`);
 
   if (wants("accounts")) await seedAttendeeAccounts();
   // Later phases need the ids, so the lookups always run; they create nothing that exists.
   await seedVenues();
   await seedEquipment();
+  if (args.reset) {
+    await loadEvents();
+    await retireLiveEvents();
+    await removeVenueBlocks();
+    console.log(`Retired ${stats.created["events retired"] ?? 0} live events and removed ${stats.created["venue blocks removed"] ?? 0} venue blocks`);
+  }
   if (wants("events")) {
     await loadEvents();
     for (const spec of SCENARIOS) {
@@ -822,7 +893,9 @@ async function main() {
   if (stats.skipped.length) console.log("Skipped:\n - " + stats.skipped.join("\n - "));
 }
 
-main().catch((error) => {
-  console.error(`FAILED: ${error.message}`);
-  process.exit(1);
-});
+if (import.meta.url === pathToFileURL(process.argv[1] ?? "").href) {
+  main().catch((error) => {
+    console.error(`${error instanceof Refused ? "REFUSED" : "FAILED"}: ${error.message}`);
+    process.exit(error instanceof Refused ? 2 : 1);
+  });
+}

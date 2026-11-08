@@ -1,0 +1,63 @@
+# Puts staging's demo examples back, from the Actions tab: "Reset staging demo data", then "Run workflow",
+# then type RESET. For use after a rehearsal has cancelled, rejected or moved the examples.
+#
+# It runs deploy/demo/seed-staging.mjs --reset against staging only (the script refuses any other
+# Supabase project or API host):
+#   1. every live event of organiser@ and organiser2@ is cancelled through the API, with the reason
+#      "Demo reset: ...". That releases its bookings, holds and equipment (F4); its history stays,
+#      because the history is append-only (ADR-0007) and nothing is deleted;
+#   2. every active venue block at the demo venues is removed;
+#   3. each example is created again at its stage, with its bookings, hold, equipment, change
+#      requests, registrations, waitlist and high-demand flag.
+# Accounts, venues and equipment types are kept. Retired events stay visible as Cancelled.
+name: Reset staging demo data
+
+on:
+  workflow_dispatch:
+    inputs:
+      confirm:
+        description: Type RESET to cancel every live demo event on staging and create the examples again
+        required: true
+        type: string
+
+permissions:
+  contents: read
+
+concurrency:
+  group: demo-reset-staging
+  cancel-in-progress: false
+
+jobs:
+  reset:
+    name: Reset staging demo data
+    if: github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    environment: staging
+    steps:
+      - name: Check the confirmation
+        env:
+          CONFIRM: ${{ inputs.confirm }}
+        run: |
+          if [ "$CONFIRM" != "RESET" ]; then
+            echo "::error::Type RESET, in capitals, to run the reset. Nothing was changed."
+            exit 1
+          fi
+
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
+        with:
+          node-version-file: .nvmrc
+          cache: npm
+
+      - name: Install
+        run: npm ci --ignore-scripts
+
+      - name: Retire the live demo events and create the examples again
+        env:
+          DATABASE_URL: ${{ secrets.DATABASE_URL }}
+          SUPABASE_URL: ${{ vars.SUPABASE_URL }}
+          SUPABASE_ANON_KEY: ${{ vars.SUPABASE_ANON_KEY }}
+          SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
+        run: node deploy/demo/seed-staging.mjs --env staging --from-environment --reset

@@ -6,6 +6,7 @@
 #   variables  VM_HOST, VM_SSH_KNOWN_HOSTS, API_HOST, WEB_ORIGIN, SUPABASE_URL, SUPABASE_ANON_KEY
 #   secrets    VM_SSH_KEY, DATABASE_URL, MIGRATE_DATABASE_URL, SUPABASE_SERVICE_ROLE_KEY,
 #              VERCEL_TOKEN, VERCEL_ORG_ID, VERCEL_PROJECT_ID
+#   optional   OTEL_EXPORTER_OTLP_ENDPOINT, OTEL_EXPORTER_OTLP_HEADERS, WAITING_ROOM_SIGNING_KEY
 #
 # The repository and its logs are public: no step prints a secret. The container's settings go to the
 # VM's deploy gate on stdin (deploy/azure/connectsphere-vm-deploy), which prints key names only, and
@@ -149,10 +150,18 @@ jobs:
           # EN-08, optional: the environment's Grafana Cloud OTLP endpoint and its Authorization header.
           OTEL_EXPORTER_OTLP_ENDPOINT: ${{ secrets.OTEL_EXPORTER_OTLP_ENDPOINT }}
           OTEL_EXPORTER_OTLP_HEADERS: ${{ secrets.OTEL_EXPORTER_OTLP_HEADERS }}
+          # EN-19, optional: the key the registration service signs waiting-room admissions with. Without
+          # it a high-demand event refuses every registration (503 WAITING_ROOM_UNAVAILABLE).
+          WAITING_ROOM_SIGNING_KEY: ${{ secrets.WAITING_ROOM_SIGNING_KEY }}
         run: |
           settings="$RUNNER_TEMP/settings.env"
           trap 'rm -f "$settings"' EXIT
           umask 077
+          # The service refuses to start with a key under 32 characters; fail here, by name, instead.
+          if [ -n "$WAITING_ROOM_SIGNING_KEY" ] && [ "${#WAITING_ROOM_SIGNING_KEY}" -lt 32 ]; then
+            echo "::error::WAITING_ROOM_SIGNING_KEY must be at least 32 characters"
+            exit 1
+          fi
           cors="$WEB_ORIGIN"
           if [ -n "$ALSO_WEB_ORIGINS" ]; then cors="${cors},${ALSO_WEB_ORIGINS}"; fi
           {
@@ -170,6 +179,9 @@ jobs:
               printf 'OTEL_EXPORTER_OTLP_ENDPOINT=%s\n' "$OTEL_EXPORTER_OTLP_ENDPOINT"
               printf 'OTEL_EXPORTER_OTLP_HEADERS=%s\n' "$OTEL_EXPORTER_OTLP_HEADERS"
               printf 'OTEL_RESOURCE_ATTRIBUTES=deployment.environment=%s\n' "$ENVIRONMENT"
+            fi
+            if [ -n "$WAITING_ROOM_SIGNING_KEY" ]; then
+              printf 'WAITING_ROOM_SIGNING_KEY=%s\n' "$WAITING_ROOM_SIGNING_KEY"
             fi
             printf 'GHCR_USER=%s\n' "$GHCR_USER"
             printf 'GHCR_TOKEN=%s\n' "$GHCR_TOKEN"

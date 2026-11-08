@@ -169,6 +169,7 @@ public values; secrets are secret.
 | `VERCEL_PROJECT_ID` | secret | the Vercel project's id | `connectsphere-staging` | `connectsphere` |
 | `ALSO_WEB_ORIGINS` | variable, optional | more web origins the API accepts and Supabase may redirect to, comma-separated | — | `https://connectsphere-blush.vercel.app` |
 | `SUPABASE_ACCESS_TOKEN` | secret, optional | a Supabase personal access token; with it the workflow sets the project's Auth Site URL and redirect URLs | the same | the same |
+| `WAITING_ROOM_SIGNING_KEY` | secret, optional | the key registration signs waiting-room admissions with (EN-19): at least 32 characters, from `openssl rand -hex 32`. Without it a high-demand event takes no registrations | its own | its own |
 
 The `production` environment has a required reviewer, and both environments allow deployments from
 `main` only. The GHCR packages may stay private: the gate pulls with each job's own token.

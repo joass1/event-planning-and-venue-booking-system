@@ -1,3 +1,4 @@
+import { readFileSync } from "node:fs";
 import { describe, expect, it } from "vitest";
 import express from "express";
 import request from "supertest";
@@ -21,6 +22,32 @@ function appWith(value: string | undefined) {
     });
 }
 
+describe("CORS for the waiting room (EN-19)", () => {
+  it("EN-19 a preflight for registering with an admission token allows the X-Admission-Token header", async () => {
+    // The browser asks before it sends the header; without it in the answer, it never sends the registration.
+    const res = await request(appWith(ALLOWED))
+      .options("/api/v1/registrations")
+      .set("Origin", ALLOWED)
+      .set("Access-Control-Request-Method", "POST")
+      .set("Access-Control-Request-Headers", "authorization,content-type,x-admission-token");
+    expect(res.status).toBe(204);
+    expect(res.headers["access-control-allow-headers"]).toContain("X-Admission-Token");
+  });
+
+  it("EN-19 every header the web app sends to the registration service is one CORS allows", async () => {
+    const client = readFileSync(new URL("../../../../frontend/src/api/registration.ts", import.meta.url), "utf8");
+    const sent = [...client.matchAll(/headers: \{ "([A-Za-z-]+)":/g)].map((m) => m[1]!);
+    expect(sent).toContain("X-Admission-Token");
+    const res = await request(appWith(ALLOWED))
+      .options("/api/v1/registrations")
+      .set("Origin", ALLOWED)
+      .set("Access-Control-Request-Method", "POST")
+      .set("Access-Control-Request-Headers", sent.join(","));
+    const allowed = (res.headers["access-control-allow-headers"] as string).toLowerCase().split(",");
+    for (const header of sent) expect(allowed, header).toContain(header.toLowerCase());
+  });
+});
+
 describe("CORS for the Vercel origin", () => {
   it("DEPLOY-T9 an allowed origin gets Access-Control-Allow-Origin and the exposed correlation header", async () => {
     const res = await request(appWith(ALLOWED)).get("/api/v1/thing").set("Origin", ALLOWED);
@@ -40,7 +67,7 @@ describe("CORS for the Vercel origin", () => {
     expect(res.status).toBe(204);
     expect(res.headers["access-control-allow-origin"]).toBe(ALLOWED);
     expect(res.headers["access-control-allow-methods"]).toBe("GET,HEAD,POST,PUT,PATCH,OPTIONS");
-    expect(res.headers["access-control-allow-headers"]).toBe("Authorization,Content-Type,If-Match,X-Correlation-Id");
+    expect(res.headers["access-control-allow-headers"]).toBe("Authorization,Content-Type,If-Match,X-Admission-Token,X-Correlation-Id");
     expect(res.headers["access-control-max-age"]).toBe("600");
   });
 

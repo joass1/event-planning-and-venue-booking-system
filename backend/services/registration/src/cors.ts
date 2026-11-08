@@ -11,7 +11,8 @@ import type { RequestHandler } from "express";
 
 /** The methods and headers the web app uses (frontend/src/api). */
 const METHODS = ["GET", "HEAD", "POST", "PUT", "PATCH", "OPTIONS"];
-const ALLOWED_HEADERS = ["Authorization", "Content-Type", "If-Match", "X-Correlation-Id"];
+/** EN-19: X-Admission-Token carries the waiting room's admission when a high-demand event is registered for. */
+const ALLOWED_HEADERS = ["Authorization", "Content-Type", "If-Match", "X-Admission-Token", "X-Correlation-Id"];
 /** client.ts reads the correlation id; Retry-After comes with RATE_LIMITED. */
 const EXPOSED_HEADERS = ["X-Correlation-Id", "Retry-After"];
 const PREFLIGHT_MAX_AGE_SECONDS = 600;

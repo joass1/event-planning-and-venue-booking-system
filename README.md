@@ -104,7 +104,7 @@ The sign-in page lists the accounts, and fills in the first, only in development
 
 ### Demonstration data on staging
 
-`npm run demo:seed -- --env staging` loads venues, equipment, events in every status, bookings, a hold, a block, a change request, registrations and a waitlist into staging through the application's own API. It refuses to run against anything but staging, reads its connection details from `connectsphere-secrets/staging.env` (never printed) and is safe to run again. See `deploy/demo/seed-staging.mjs`.
+`npm run demo:seed -- --env staging` loads venues, equipment, events in every status, bookings, a hold, a block, a change request, registrations and a waitlist into staging through the application's own API. It refuses to run against anything but staging, reads its connection details from `connectsphere-secrets/staging.env` (never printed) and is safe to run again. See `deploy/demo/seed-staging.mjs`. After a rehearsal, the **Reset staging demo data** workflow (Actions tab, Run workflow, type `RESET`) cancels every live demo event, which keeps its history, and creates the examples again.
 
 ### Test evidence
 

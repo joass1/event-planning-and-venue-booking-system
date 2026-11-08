@@ -645,4 +645,69 @@ describe("S3 cards: reconsidering the arrangements an approved change affects", 
       flag: "REQUIRES_RECONFIRMATION",
     });
   });
+
+  // S3-T15, S3-T16: the coordinator re-arranges a flagged booking by replacing it (L5's replacement, CR-02).
+  // FX-S3's venues record no operating hours, so K2 finds every request Not suitable and asks for a justification.
+  const replace = (fx: Fx, body: Record<string, unknown>) =>
+    request(app)
+      .post("/api/v1/booking-requests")
+      .set(bearer)
+      .send({ eventId: fx.event.id, layout: "Theatre", replacesBookingId: fx.b1.id, justification: "S3 card: the room the event now needs", ...body });
+
+  it("S3-T15 a booking the change moved is replaced for the new period; approving the replacement releases it and its flag", async () => {
+    const fx = await fixture(DATE_MOVED);
+    expect((await decide(fx.cr)).status).toBe(200);
+    expect(await slotOf(fx.event.id, fx.b1.id)).toMatchObject({ status: "CONFIRMED", period_mismatch: true });
+
+    // C asks for B1's venue again, for the event's new period, replacing B1.
+    const replacement = await replace(fx, { venueId: fx.v1.id, startsAt: at("15:00"), endsAt: at("18:00"), expectedAttendance: 80 });
+    expect(replacement.status).toBe(201);
+    expect(replacement.body.replacesBookingId).toBe(fx.b1.id);
+    expect((await slotOf(fx.event.id, fx.b1.id)).status).toBe("CONFIRMED");
+
+    asVS();
+    const approved = await request(app).post(`/api/v1/booking-requests/${replacement.body.id}/approve`).set(bearer).send();
+    expect(approved.status).toBe(200);
+
+    expect((await slotOf(fx.event.id, fx.b1.id)).status).toBe("RELEASED");
+    const rebooked = await slotOf(fx.event.id, approved.body.bookingId as string);
+    expect(rebooked).toMatchObject({ status: "CONFIRMED", requires_reconfirmation: false, period_mismatch: false, unsuitable: false });
+    expect(rebooked.starts_at.toISOString()).toBe(at("15:00"));
+    expect(rebooked.ends_at.toISOString()).toBe(at("18:00"));
+
+    // B1's flag went with it; B2, not yet replaced, is still flagged.
+    asC();
+    const flags = (await readFlags(fx.event.id)).body.flags as FlagView[];
+    expect(flags.some((flag) => flag.id === fx.b1.id || flag.id === approved.body.bookingId)).toBe(false);
+    expect(flags).toContainEqual(expect.objectContaining({ arrangement: "BOOKING", id: fx.b2.id, flag: "REQUIRES_RECONFIRMATION" }));
+  });
+
+  it("S3-T16 a booking too small for the new attendance is replaced; once Venue Staff approve, nothing is flagged and F5 confirms", async () => {
+    const fx = await fixture(ATTENDANCE_150);
+    expect((await decide(fx.cr)).status).toBe(200);
+    expect(await slotOf(fx.event.id, fx.b1.id)).toMatchObject({
+      status: "CONFIRMED",
+      unsuitable: true,
+      requires_reconfirmation: false,
+      period_mismatch: false,
+    });
+    // A Theatre for 200, for the same period.
+    const v3 = await newVenue(sql, A.vs, "Venue Three", "Theatre", 200);
+
+    const replacement = await replace(fx, { venueId: v3.id, startsAt: at("14:00"), endsAt: at("18:00"), expectedAttendance: 150 });
+    expect(replacement.status).toBe(201);
+    expect(replacement.body.replacesBookingId).toBe(fx.b1.id);
+
+    asVS();
+    expect((await request(app).post(`/api/v1/booking-requests/${replacement.body.id}/approve`).set(bearer).send()).status).toBe(200);
+    expect((await slotOf(fx.event.id, fx.b1.id)).status).toBe("RELEASED");
+
+    asC();
+    const listed = await readFlags(fx.event.id);
+    expect(listed.status).toBe(200);
+    expect(listed.body.flags).toEqual([]);
+    const confirmed = await confirm(fx.event.id);
+    expect(confirmed.status).toBe(200);
+    expect((await eventRow(fx.event.id)).status).toBe("SAFETY_REVIEW");
+  });
 });

@@ -19,6 +19,7 @@ throw inside the test, which cannot be done by hand. S3-T13 is the signed-in bro
 | AC9: F5 confirmation is refused while a flag exists, naming them | S3-T9, S3-T13, S3-T14 |
 | AC10: Venue Staff, Technical Support and (later) attendees are notified | S3-T10, S3-T13 |
 | AC11: if flagging fails, the change is not applied and no arrangement is altered | S3-T11 |
+| The coordinator decides what to re-arrange (the story's "so that"): a booking a change flagged, moved or Unsuitable, is replaced through L5's replacement request, and approving it releases the booking and its flag | S3-T15, S3-T16 |
 
 Attendees are not notified by S3: EN-13 (registration service) is not built, so `impact.activeRegistrations` is always 0.
 

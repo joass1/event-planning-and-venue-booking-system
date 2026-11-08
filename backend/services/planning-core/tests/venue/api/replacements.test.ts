@@ -162,6 +162,8 @@ describe("the event's bookings (L5-T1, L5-T2)", () => {
         endsAt: utc("18:00"),
         status: "CONFIRMED",
         requiresReconfirmation: true,
+        periodMismatch: false,
+        unsuitable: false,
         releaseReason: null,
         disruptions: [{ blockId, reasonType: "MAINTENANCE", description: "Stage rigging inspection", startsAt: utc("16:00"), endsAt: utc("19:00") }],
         overlaps: [],

@@ -19,6 +19,7 @@ import { Refusal } from "../components/Refusal.js";
 import { RequestConflicts } from "../components/RequestConflicts.js";
 import { BOOKING_REQUEST_APPEARANCE, BOOKING_REQUEST_LABELS, UNAVAILABILITY_LABELS, HOLD_APPEARANCE, HOLD_LABELS } from "../shared/status.js";
 import { formatMoment, formatPeriod } from "../shared/singaporeTime.js";
+import type { ReplacementReason } from "../shared/replacement.js";
 
 /**
  * L1, L2, L4, M2 — every venue request an event has made, each with its venue,
@@ -30,21 +31,41 @@ import { formatMoment, formatPeriod } from "../shared/singaporeTime.js";
  * L5 (CR-02) — the event's bookings too, each with any unavailability that
  * disrupts it (I2) and the replacements asked for. A confirmed booking a block
  * disrupts offers the assigned coordinator "Find a replacement", which opens the
- * venue search for the booking's period.
+ * venue search for the booking's period. S3: so does one an approved change
+ * flagged, moved (searched for the event's new period) or Unsuitable for the
+ * new attendance; approving the replacement releases it, and its flag with it.
  * L3: also lists tentative holds and offers conversion or release.
  */
 
 const SLOT_LABELS: Record<EventBooking["status"], string> = { HELD: "Held", CONFIRMED: "Confirmed", RELEASED: "Released" };
 
-/** "/venues/search?…": J1's search from the event, for the disrupted booking's period, replacing it (L5). */
-function replacementSearch(eventId: string, booking: EventBooking): string {
+/**
+ * Why a confirmed booking needs replacing, or null when it doesn't: a block over it (I2), the venue's
+ * new setup or turnaround time (H3), or an approved change that moved the event or outgrew the room (S3).
+ */
+function replacementReason(booking: EventBooking): ReplacementReason | null {
+  if (booking.status !== "CONFIRMED") return null;
+  if (booking.requiresReconfirmation && booking.disruptions.length > 0) return "unavailable";
+  if (booking.requiresReconfirmation && booking.overlaps.length > 0) return "overlap";
+  if (booking.periodMismatch) return "moved";
+  if (booking.unsuitable) return "unsuitable";
+  return null;
+}
+
+/**
+ * "/venues/search?…": J1's search from the event, replacing the booking (L5). The window is the booking's
+ * period, except for a booking an approved change moved (S3), which is replaced for the event's new period.
+ */
+function replacementSearch(event: BookingEvent, booking: EventBooking, why: ReplacementReason): string {
+  const moved = why === "moved" && event.proposedStartAt !== null && event.proposedEndAt !== null;
   const params = new URLSearchParams({
-    eventId,
+    eventId: event.id,
     replaces: booking.id,
     booking: booking.reference,
     venue: booking.venueName,
-    from: toLocalInput(booking.startsAt),
-    to: toLocalInput(booking.endsAt),
+    why,
+    from: toLocalInput(moved ? event.proposedStartAt! : booking.startsAt),
+    to: toLocalInput(moved ? event.proposedEndAt! : booking.endsAt),
   });
   return `/venues/search?${params}`;
 }
@@ -232,8 +253,8 @@ export function EventVenueRequests() {
             <tbody>
               {bookings.map((b) => {
                 const live = b.status !== "RELEASED";
-                const replaceable =
-                  assigned && canRequest && b.status === "CONFIRMED" && b.requiresReconfirmation && (b.disruptions.length > 0 || b.overlaps.length > 0);
+                const why = replacementReason(b);
+                const replaceable = assigned && canRequest && why !== null;
                 return (
                   <tr key={b.id} aria-label={b.reference}>
                     <td style={cell}>{b.reference}</td>
@@ -248,6 +269,23 @@ export function EventVenueRequests() {
                           {" "}
                           <Lozenge appearance="removed">Requires reconfirmation</Lozenge>
                         </>
+                      )}
+                      {live && b.unsuitable && (
+                        <>
+                          {" "}
+                          <Lozenge appearance="removed">Unsuitable</Lozenge>
+                        </>
+                      )}
+                      {live && b.periodMismatch && event.proposedStartAt && event.proposedEndAt && (
+                        <div style={{ fontSize: 12, marginTop: 4 }}>
+                          An approved change moved the event to {formatPeriod(event.proposedStartAt, event.proposedEndAt)}
+                        </div>
+                      )}
+                      {live && b.unsuitable && (
+                        <div style={{ fontSize: 12, marginTop: 4 }}>
+                          Too small for the event's expected attendance
+                          {event.expectedAttendance !== null ? ` of ${event.expectedAttendance}` : ""}
+                        </div>
                       )}
                       {live &&
                         b.disruptions.map((d) => (
@@ -268,7 +306,7 @@ export function EventVenueRequests() {
                     </td>
                     <td style={cell}>
                       {replaceable && (
-                        <Button appearance="primary" onClick={() => navigate(replacementSearch(event.id, b))}>
+                        <Button appearance="primary" onClick={() => navigate(replacementSearch(event, b, why))}>
                           Find a replacement
                         </Button>
                       )}

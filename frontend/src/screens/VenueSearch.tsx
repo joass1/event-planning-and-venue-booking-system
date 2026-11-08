@@ -18,6 +18,7 @@ import {
   type VenueSearchResult,
 } from "../api/venues.js";
 import { Refusal } from "../components/Refusal.js";
+import { replacedBecause, replacementReasonFrom, replacementWindowLabel, type ReplacementReason } from "../shared/replacement.js";
 
 /**
  * J1, J2 — find a venue for an event: search by part of a name or building,
@@ -32,8 +33,9 @@ import { Refusal } from "../components/Refusal.js";
  * filters were applied. Times are Singapore time.
  *
  * Opened by "Find a replacement" (L5, `&replaces=`), the window is the disrupted
- * booking's period rather than the event's, and each venue offers "Request this
- * venue", a request linked to the booking it replaces.
+ * booking's period rather than the event's (or, for a booking an approved change
+ * moved, the event's new period: S3, `&why=moved`), and each venue offers "Request
+ * this venue", a request linked to the booking it replaces.
  */
 
 const FIELD_STYLE = { padding: "6px 8px", border: "2px solid #DFE1E6", borderRadius: 3, font: "inherit", background: "#fff" };
@@ -126,8 +128,8 @@ export function VenueSearch() {
       {replacing && (
         <SectionMessage appearance="information" title="Finding a replacement">
           <p>
-            Finding a replacement for {replacing.booking} at {replacing.venue}, which is unavailable. The window is the
-            booking's period; choose "Request this venue" to request a replacement linked to it.
+            Finding a replacement for {replacing.booking} at {replacing.venue}, {replacedBecause(replacing.why)}. The window
+            is {replacementWindowLabel(replacing.why)}; choose "Request this venue" to request a replacement linked to it.
           </p>
         </SectionMessage>
       )}
@@ -265,6 +267,7 @@ interface Replacing {
   bookingId: string;
   booking: string;
   venue: string;
+  why: ReplacementReason;
   from: string;
   to: string;
 }
@@ -275,6 +278,7 @@ function replacementFrom(params: URLSearchParams, eventId: string): Replacing {
     bookingId: params.get("replaces") ?? "",
     booking: params.get("booking") ?? "the disrupted booking",
     venue: params.get("venue") ?? "its venue",
+    why: replacementReasonFrom(params.get("why")),
     from: params.get("from") ?? "",
     to: params.get("to") ?? "",
   };
@@ -287,6 +291,7 @@ function replacementRequest(replacing: Replacing, venueId: string): string {
     replaces: replacing.bookingId,
     booking: replacing.booking,
     venue: replacing.venue,
+    why: replacing.why,
     from: replacing.from,
     to: replacing.to,
   });

@@ -7,6 +7,7 @@ import { useSignedIn } from "../auth/SessionContext.js";
 import { ApiError } from "../api/client.js";
 import { createBookingRequest, listEventBookingRequests, type BookingEvent } from "../api/bookingRequests.js";
 import { convertHold, listEventHolds, type Hold } from "../api/holds.js";
+import { replacedBecause, replacementReasonFrom } from "../shared/replacement.js";
 import { getVenue, listVenues, type SuitabilityCondition, type Venue, type VenueListItem } from "../api/venues.js";
 import { Refusal } from "../components/Refusal.js";
 import { fromInputs, toInputs } from "../shared/singaporeTime.js";
@@ -68,7 +69,15 @@ export function BookingRequestForm() {
   // L5: the disrupted booking this request replaces, with the venue and period to start from.
   const replaces = params.get("replaces");
   const replacing = replaces
-    ? { bookingId: replaces, booking: params.get("booking") ?? "", venue: params.get("venue") ?? "", venueId: params.get("venueId") ?? "", from: params.get("from") ?? "", to: params.get("to") ?? "" }
+    ? {
+        bookingId: replaces,
+        booking: params.get("booking") ?? "",
+        venue: params.get("venue") ?? "",
+        venueId: params.get("venueId") ?? "",
+        from: params.get("from") ?? "",
+        to: params.get("to") ?? "",
+        why: replacementReasonFrom(params.get("why")),
+      }
     : null;
   const holdId = params.get("hold");
   const [event, setEvent] = useState<BookingEvent | null>(null);
@@ -193,8 +202,8 @@ export function BookingRequestForm() {
         <div style={{ marginBottom: 16 }}>
           <SectionMessage appearance="information" title="Replacement request">
             <p style={{ margin: 0 }}>
-              This request replaces {replacing.booking} at {replacing.venue}, which is unavailable. That booking is kept until
-              this request is approved, and then released.
+              This request replaces {replacing.booking} at {replacing.venue}, {replacedBecause(replacing.why)}. That booking is
+              kept until this request is approved, and then released.
             </p>
           </SectionMessage>
         </div>

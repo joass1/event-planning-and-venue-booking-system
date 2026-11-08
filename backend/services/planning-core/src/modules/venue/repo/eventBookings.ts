@@ -35,6 +35,10 @@ export interface EventBooking {
   endsAt: string;
   status: VenueSlotStatus;
   requiresReconfirmation: boolean;
+  /** S3: an approved change moved the event, so the booking is for its old period (part of requiresReconfirmation). */
+  periodMismatch: boolean;
+  /** S3: the event's new attendance is more than the booked layout holds. */
+  unsuitable: boolean;
   /** CR-02: "replaced" once an approved replacement released it. */
   releaseReason: string | null;
   disruptions: BookingDisruption[];
@@ -55,6 +59,8 @@ export async function listBookingsForEvent(db: Db, eventId: string): Promise<Eve
       ends_at: Date;
       status: VenueSlotStatus;
       requires_reconfirmation: boolean;
+      period_mismatch: boolean;
+      unsuitable: boolean;
       release_reason: string | null;
       disruptions: { blockId: string; reasonType: UnavailabilityReasonType; description: string; startsAt: string; endsAt: string | null }[];
       overlaps: string[];
@@ -63,7 +69,8 @@ export async function listBookingsForEvent(db: Db, eventId: string): Promise<Eve
   >`
     select s.id, s.reference, s.venue_id, v.name as venue_name, s.starts_at, s.ends_at, s.status,
            -- I2's and H3's flag, or S3's when an approved change moved the event (period_mismatch).
-           (s.requires_reconfirmation or s.period_mismatch) as requires_reconfirmation, s.release_reason,
+           (s.requires_reconfirmation or s.period_mismatch) as requires_reconfirmation, s.period_mismatch, s.unsuitable,
+           s.release_reason,
            coalesce((
              select json_agg(json_build_object(
                       'blockId', b.id, 'reasonType', b.reason_type, 'description', b.description,
@@ -113,6 +120,8 @@ export async function listBookingsForEvent(db: Db, eventId: string): Promise<Eve
     endsAt: row.ends_at.toISOString(),
     status: row.status,
     requiresReconfirmation: row.requires_reconfirmation,
+    periodMismatch: row.period_mismatch,
+    unsuitable: row.unsuitable,
     releaseReason: row.release_reason,
     // json_build_object writes timestamps in the session's zone; normalise them to UTC instants.
     disruptions: row.disruptions.map((d) => ({

@@ -34,6 +34,8 @@ function booking(overrides: Record<string, unknown> = {}) {
     endsAt: "2026-12-02T10:00:00.000Z",
     status: "CONFIRMED",
     requiresReconfirmation: true,
+    periodMismatch: false,
+    unsuitable: false,
     releaseReason: null,
     disruptions: [
       { blockId: "block-1", reasonType: "MAINTENANCE", description: "Stage rigging inspection", startsAt: "2026-12-02T08:00:00.000Z", endsAt: "2026-12-02T11:00:00.000Z" },
@@ -248,5 +250,72 @@ describe("finding and requesting a replacement (L5-T3, L5-T4)", () => {
       layout: "Theatre",
       replacesBookingId: BOOKING_ID,
     });
+  });
+});
+
+describe("bookings an approved change flagged (S3-T15, S3-T16)", () => {
+  it("offers Find a replacement for a booking the change moved, searched and requested for the event's new period", async () => {
+    // The booking is for 13:00–17:00; the approved change moved the event to 14:00–18:00.
+    const moved = booking({ startsAt: "2026-12-02T05:00:00.000Z", endsAt: "2026-12-02T09:00:00.000Z", periodMismatch: true, disruptions: [] });
+    listEventBookingRequests.mockResolvedValueOnce({ event: EVENT, items: [], bookings: [moved] });
+    signInAs(ASSIGNED, "EVENT_COORDINATOR", `/events/${EVENT_ID}/venue-requests`);
+    render(<App />);
+    const row = within(await bookingsTable()).getByRole("row", { name: /BKR-000001/ });
+    expect(text(row)).toContain("Wednesday 2 December 2026, 13:00–17:00");
+    expect(text(row)).toContain("Requires reconfirmation");
+    expect(text(row)).toContain("An approved change moved the event to Wednesday 2 December 2026, 14:00–18:00");
+    fireEvent.click(within(row).getByRole("button", { name: "Find a replacement" }));
+
+    expect(
+      await screen.findByText(
+        /Finding a replacement for BKR-000001 at Lee Kong Chian Auditorium, which is for the event's old date and time\. The window is the event's new period/,
+      ),
+    ).toBeTruthy();
+    await waitFor(() => expect(searchVenues).toHaveBeenCalled());
+    const searched = searchVenues.mock.calls[searchVenues.mock.calls.length - 1]![1] as Record<string, unknown>;
+    expect(searched).toMatchObject({ from: "2026-12-02T14:00", to: "2026-12-02T18:00", minCapacity: "150" });
+
+    const results = await screen.findByRole("region", { name: "Results" });
+    fireEvent.click(await within(results).findByRole("link", { name: "Request this venue" }));
+    expect(await screen.findByText(/This request replaces BKR-000001 at Lee Kong Chian Auditorium, which is for the event's old date and time\./)).toBeTruthy();
+    await waitFor(() => expect((screen.getByLabelText("Start time") as HTMLInputElement).value).toBe("14:00"));
+    expect((screen.getByLabelText("End time") as HTMLInputElement).value).toBe("18:00");
+    fireEvent.click(screen.getByRole("button", { name: "Submit request" }));
+
+    await waitFor(() => expect(createBookingRequest).toHaveBeenCalled());
+    expect(createBookingRequest.mock.calls[0]![1]).toMatchObject({
+      startsAt: "2026-12-02T14:00:00+08:00",
+      endsAt: "2026-12-02T18:00:00+08:00",
+      replacesBookingId: BOOKING_ID,
+    });
+  });
+
+  it("offers Find a replacement for a booking too small for the new attendance, for its own period, and only to the assigned coordinator", async () => {
+    const tooSmall = booking({ requiresReconfirmation: false, unsuitable: true, disruptions: [] });
+    listEventBookingRequests.mockResolvedValueOnce({ event: EVENT, items: [], bookings: [tooSmall] });
+    signInAs(ASSIGNED, "EVENT_COORDINATOR", `/events/${EVENT_ID}/venue-requests`);
+    render(<App />);
+    const row = within(await bookingsTable()).getByRole("row", { name: /BKR-000001/ });
+    expect(text(row)).toContain("Unsuitable");
+    expect(text(row)).toContain("Too small for the event's expected attendance of 150");
+    expect(text(row)).not.toContain("Requires reconfirmation");
+    fireEvent.click(within(row).getByRole("button", { name: "Find a replacement" }));
+
+    expect(
+      await screen.findByText(
+        /Finding a replacement for BKR-000001 at Lee Kong Chian Auditorium, which is too small for the event's expected attendance\. The window is the booking's period/,
+      ),
+    ).toBeTruthy();
+    await waitFor(() => expect(searchVenues).toHaveBeenCalled());
+    const searched = searchVenues.mock.calls[searchVenues.mock.calls.length - 1]![1] as Record<string, unknown>;
+    expect(searched).toMatchObject({ from: "2026-12-02T14:00", to: "2026-12-02T18:00", minCapacity: "150" });
+    cleanup();
+
+    listEventBookingRequests.mockResolvedValueOnce({ event: EVENT, items: [], bookings: [tooSmall] });
+    signInAs("organiser", "EVENT_ORGANISER", `/events/${EVENT_ID}/venue-requests`);
+    render(<App />);
+    const ownerRow = within(await bookingsTable()).getByRole("row", { name: /BKR-000001/ });
+    expect(text(ownerRow)).toContain("Unsuitable");
+    expect(within(ownerRow).queryByRole("button")).toBeNull();
   });
 });

@@ -103,6 +103,10 @@ export interface EventBooking {
   endsAt: string;
   status: "HELD" | "CONFIRMED" | "RELEASED";
   requiresReconfirmation: boolean;
+  /** S3: an approved change moved the event, so the booking is for its old period (part of requiresReconfirmation). */
+  periodMismatch: boolean;
+  /** S3: the event's new expected attendance is more than the booked layout holds. */
+  unsuitable: boolean;
   releaseReason: string | null;
   /** An active block over the booking; its end is null when the block has none (I5). */
   disruptions: { blockId: string; reasonType: string; description: string; startsAt: string; endsAt: string | null }[];

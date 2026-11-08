@@ -62,7 +62,7 @@ const EVENT_NOT_FOUND = "No event with that id exists, or you can't see it.";
 export const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 const INVALID = "The request could not be submitted. Check the highlighted fields.";
 const REPLACEMENT_NOT_VALID =
-  "The booking to replace must be one of this event's confirmed bookings flagged Requires Reconfirmation.";
+  "The booking to replace must be one of this event's confirmed bookings flagged Requires Reconfirmation or Unsuitable.";
 
 /**
  * At most 120 requests a minute from one address to these routes, refused before

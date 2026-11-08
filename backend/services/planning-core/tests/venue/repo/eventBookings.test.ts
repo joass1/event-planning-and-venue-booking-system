@@ -94,6 +94,8 @@ describe("listBookingsForEvent (L5-T1, L5-T5)", () => {
       endsAt: at("18:00").toISOString(),
       status: "CONFIRMED",
       requiresReconfirmation: true,
+      periodMismatch: false,
+      unsuitable: false,
       releaseReason: null,
       disruptions: [
         { blockId: made.id, reasonType: "MAINTENANCE", description: "Stage rigging inspection", startsAt: at("16:00").toISOString(), endsAt: at("19:00").toISOString() },

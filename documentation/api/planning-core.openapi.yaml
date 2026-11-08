@@ -2867,7 +2867,7 @@ paths:
             application/json:
               schema: { $ref: "#/components/schemas/ErrorEnvelope" }
         "422":
-          description: "`VENUE_INACTIVE`, `REPLACEMENT_NOT_VALID`, or `JUSTIFICATION_REQUIRED` (K2: the venue is Not suitable for the request and no justification with a non-space character was sent; `fields` names `justification`, and `details` is `{ status, reasons }`, the failing conditions as `SuitabilityCondition`s)."
+          description: "`VENUE_INACTIVE`, `REPLACEMENT_NOT_VALID` (the booking to replace is not one of the event's confirmed bookings flagged Requires Reconfirmation or Unsuitable), or `JUSTIFICATION_REQUIRED` (K2: the venue is Not suitable for the request and no justification with a non-space character was sent; `fields` names `justification`, and `details` is `{ status, reasons }`, the failing conditions as `SuitabilityCondition`s)."
           content:
             application/json:
               schema: { $ref: "#/components/schemas/ErrorEnvelope" }
@@ -4886,7 +4886,7 @@ components:
               endsAt: { type: string, format: date-time }
     EventBooking:
       type: object
-      required: [id, reference, venueId, venueName, startsAt, endsAt, status, requiresReconfirmation, releaseReason, disruptions, overlaps, replacements]
+      required: [id, reference, venueId, venueName, startsAt, endsAt, status, requiresReconfirmation, periodMismatch, unsuitable, releaseReason, disruptions, overlaps, replacements]
       properties:
         id: { type: string, format: uuid }
         reference: { type: string }
@@ -4896,6 +4896,8 @@ components:
         endsAt: { type: string, format: date-time }
         status: { type: string, enum: [HELD, CONFIRMED, RELEASED] }
         requiresReconfirmation: { type: boolean }
+        periodMismatch: { type: boolean, description: "S3: an approved change moved the event, so the booking is for its old period. Counted in requiresReconfirmation." }
+        unsuitable: { type: boolean, description: "S3: the event's new expected attendance is more than the booked layout holds." }
         releaseReason: { type: [string, "null"], description: "CR-02: `replaced` once an approved replacement released it." }
         disruptions:
           type: array

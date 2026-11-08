@@ -282,7 +282,7 @@ describe("POST /api/v1/booking-requests (L1)", () => {
       expect(refused.status).toBe(422);
       expect(refused.body.error).toMatchObject({
         code: "REPLACEMENT_NOT_VALID",
-        message: "The booking to replace must be one of this event's confirmed bookings flagged Requires Reconfirmation.",
+        message: "The booking to replace must be one of this event's confirmed bookings flagged Requires Reconfirmation or Unsuitable.",
       });
     }
     expect(await requestCount(event.id)).toBe(1);

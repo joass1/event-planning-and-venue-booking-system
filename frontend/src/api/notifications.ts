@@ -49,16 +49,52 @@ export function markAllNotificationsRead(token: string) {
   });
 }
 
+/** What "Open" needs to know about a notification to choose the page. */
+export type NotificationTarget = Pick<NotificationItem, "notificationType" | "eventId" | "relatedReference" | "message">;
+
+/** The hold and booking request references a notice names (HLD-…, BKR-…); a confirmed booking keeps its request's. */
+function venueReferencesIn(target: NotificationTarget): string[] {
+  const text = `${target.relatedReference ?? ""} ${target.message}`;
+  return text.match(/\b(?:HLD|BKR)-\d+\b/g) ?? [];
+}
+
+/** A notice to Venue Staff about holds and nothing else: a flagged, released or expiring hold. */
+function aboutHoldsOnly(target: NotificationTarget): boolean {
+  const references = venueReferencesIn(target);
+  return references.length > 0 && references.every((reference) => reference.startsWith("HLD-"));
+}
+
 /**
- * Where "Open" goes (T2 AC8): the role's own page for an event. That page asks
- * the server again, so if the user can no longer see the event it shows the
- * refusal and no event data. Other roles have no event page yet.
+ * Where "Open" goes (T2 AC8): a page the reader's role may open, about what the notice says.
+ * Each is a route the role's policies allow (App.tsx), so the route guard never turns the reader
+ * away. An event page asks the server again, so if the reader can no longer see the event it
+ * shows the refusal and no event data. A role with no page of its own for one event opens its
+ * list page instead: Venue Staff their Hold requests or Booking requests, Technical Support their
+ * Equipment requests, an attendee My registrations. A notice type this does not know opens the
+ * same page as the role's other notices.
  */
-export function eventPathFor(role: Role, eventId: string): string | null {
-  if (role === "EVENT_ORGANISER") return `/requests/${eventId}`;
-  if (role === "EVENT_COORDINATOR") return `/review/${eventId}`;
-  // D-02: a Lead is told of a request awaiting assignment, a Safety Officer of an event awaiting the check.
-  if (role === "EVENT_COORDINATOR_LEAD") return `/assignments/${eventId}`;
-  if (role === "SAFETY_OFFICER") return `/safety/${eventId}`;
-  return null;
+export function notificationPathFor(role: Role, target: NotificationTarget): string {
+  const event = target.eventId;
+  const type = target.notificationType;
+  switch (role) {
+    case "EVENT_ORGANISER":
+      return `/requests/${event}`;
+    case "EVENT_COORDINATOR":
+      // The event's bookings, holds and requests (L1 to L6), or its equipment lines (O2), else the review.
+      if (type.startsWith("venue-booking.")) return `/events/${event}/venue-requests`;
+      if (type.startsWith("equipment-request.")) return `/events/${event}/equipment`;
+      return `/review/${event}`;
+    // D-02: a Lead is told of a request awaiting assignment, a Safety Officer of an event awaiting the check.
+    case "EVENT_COORDINATOR_LEAD":
+      return `/assignments/${event}`;
+    case "SAFETY_OFFICER":
+      return `/safety/${event}`;
+    case "VENUE_STAFF":
+      return aboutHoldsOnly(target) ? "/holds" : "/booking-requests";
+    case "TECH_SUPPORT_STAFF":
+      return "/equipment/requests";
+    case "ATTENDEE":
+      // R6: a place opened, and whoever registers first gets it.
+      return type === "waitlist.place-opened" ? `/open-events/${event}` : "/my-registrations";
+  }
 }

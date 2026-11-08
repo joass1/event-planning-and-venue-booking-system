@@ -33,10 +33,15 @@ T2-T7 to T2-T20 were written from T2 itself that day, before the code.
 | My own notifications, newest first, with an unread count | T2-T10 |
 | Marked read one at a time or all at once; read state per user | T2-T11 to T2-T13 |
 | Read state persists across sessions | T2-T14 |
-| Opening goes to the event; once access is lost, a message and no event data | T2-T15, T2-T16 |
+| Opening goes to the event; once access is lost, a message and no event data | T2-T15, T2-T16, T2-T21 (each role's own page) |
 | Other users' notifications are never shown | T2-T17 |
 
 T2-T18 to T2-T20 cover E2's three notifications, which had no case before.
+
+T2-T21 (8 Nov 2026) covers "Open" for every role. Before it, Venue Staff, Technical Support and
+attendees were told the event had no page for their role. Each now opens a page its policies allow:
+an event page where the role has one, otherwise its own list (Hold requests or Booking requests,
+Equipment requests, My registrations).
 
 **Still to do in Jira:** create the Test issues T2-T1 to T2-T20. `tests/README.md` says a case's
 ID is its Jira Test issue key.

@@ -1,0 +1,57 @@
+# Shows the waiting room's queue on staging with one real attendee (EN-19), from the Actions tab:
+# "Fill the waiting room", then "Run workflow". It puts simulated people in a high-demand event's queue
+# ahead of whoever joins next; when it finishes, join the event as attendee@ within the minute. You see
+# your position and the wait count down, then you are admitted and registered.
+#
+# It runs deploy/demo/fill-waiting-room.mjs against staging only (the staging guard refuses any other
+# project or host). Simulated people never register, so they take no seat; their places simply pass.
+name: Fill the waiting room
+
+on:
+  workflow_dispatch:
+    inputs:
+      event:
+        description: The high-demand event's name or reference (it must be open for registration)
+        required: true
+        default: Campus Concert Ticket Release
+        type: string
+      people:
+        description: How many simulated people to put ahead (6000 is about a minute at 100 a second)
+        required: true
+        default: "6000"
+        type: string
+
+permissions:
+  contents: read
+
+concurrency:
+  group: demo-fill-waiting-room
+  cancel-in-progress: false
+
+jobs:
+  fill:
+    name: Fill the waiting room
+    if: github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    environment: staging
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
+        with:
+          node-version-file: .nvmrc
+          cache: npm
+
+      - name: Install
+        run: npm ci --ignore-scripts
+
+      - name: Put simulated people in the queue
+        env:
+          DATABASE_URL: ${{ secrets.DATABASE_URL }}
+          SUPABASE_URL: ${{ vars.SUPABASE_URL }}
+          SUPABASE_ANON_KEY: ${{ vars.SUPABASE_ANON_KEY }}
+          SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
+          EVENT: ${{ inputs.event }}
+          PEOPLE: ${{ inputs.people }}
+        run: node deploy/demo/fill-waiting-room.mjs --env staging --from-environment --event "$EVENT" --people "$PEOPLE"

@@ -72,7 +72,7 @@ function refuse(reason) {
 
 export function loadStagingConfig(args, environment = process.env) {
   if (args.env !== "staging") refuse("pass --env staging. This script only ever targets staging.");
-  const env = args.fromEnvironment ? environment : readEnvFile(args.envFile);
+  const env = args.fromEnvironment ? environment : readEnvFile(args.envFile ?? DEFAULT_ENV_FILE);
   const where = args.fromEnvironment ? "the environment" : "the env file";
   for (const key of ["DATABASE_URL", "SUPABASE_URL", "SUPABASE_ANON_KEY", "SUPABASE_SERVICE_ROLE_KEY"]) {
     if (!env[key]) refuse(`${key} is missing from ${where}.`);

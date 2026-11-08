@@ -79,3 +79,17 @@ test("EN-11-T6 both deploy paths stop the old container before removing it, so T
   assert.ok(command.startsWith("docker stop -t 30 connectsphere-staging "), command);
   assert.ok(command.indexOf("docker stop") < command.indexOf("docker rm -f connectsphere-staging"), command);
 });
+
+test("DEPLOY-T19 the deploy gate accepts every setting the release workflow sends it, the waiting room's key among them", () => {
+  // The gate refuses any key it does not list, so a key sent but not listed fails the deploy, and a key
+  // listed but not sent leaves the service without it (EN-19: no signing key, no high-demand registrations).
+  const gate = repoFile("deploy/azure/connectsphere-vm-deploy");
+  const accepted = gate.match(/^SETTINGS=\(([^)]*)\)$/m)[1].split(/\s+/);
+  const workflow = repoFile(".github/workflows/deploy-vm-environment.yml");
+  const settingsBlock = workflow.slice(workflow.indexOf('settings="$RUNNER_TEMP/settings.env"'), workflow.indexOf('} > "$settings"'));
+  const sent = [...settingsBlock.matchAll(/printf '([A-Z][A-Z0-9_]*)=/g)].map((m) => m[1]).filter((key) => !key.startsWith("GHCR_"));
+  assert.ok(sent.length >= 8, `found the settings the workflow sends: ${sent.join(", ")}`);
+  for (const key of sent) assert.ok(accepted.includes(key), `the gate accepts ${key}`);
+  assert.ok(sent.includes("WAITING_ROOM_SIGNING_KEY"), "the workflow sends the waiting room's signing key");
+  assert.match(workflow, /WAITING_ROOM_SIGNING_KEY: \$\{\{ secrets\.WAITING_ROOM_SIGNING_KEY \}\}/);
+});

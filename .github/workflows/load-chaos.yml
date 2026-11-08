@@ -307,7 +307,7 @@ jobs:
 
       - name: Install kubeconform
         run: |
-          curl -sSfL -o kubeconform.tar.gz \
+          curl -sSfL --retry 5 --retry-delay 5 --retry-all-errors --connect-timeout 15 --max-time 60 -o kubeconform.tar.gz \
             "https://github.com/yannh/kubeconform/releases/download/${KUBECONFORM_VERSION}/kubeconform-linux-amd64.tar.gz"
           echo "${KUBECONFORM_SHA256}  kubeconform.tar.gz" | sha256sum --check
           tar -xzf kubeconform.tar.gz kubeconform
@@ -321,7 +321,7 @@ jobs:
         run: |
           pip install --quiet pyyaml
           for kind in podchaos networkchaos; do
-            curl -sSfL -o "chaos-mesh.org_${kind}.yaml" \
+            curl -sSfL --retry 5 --retry-delay 5 --retry-all-errors --connect-timeout 15 --max-time 60 -o "chaos-mesh.org_${kind}.yaml" \
               "https://raw.githubusercontent.com/chaos-mesh/chaos-mesh/${CHAOS_MESH_VERSION}/helm/chaos-mesh/crds/chaos-mesh.org_${kind}.yaml"
           done
           python3 deploy/ci/crd-to-json-schema.py chaos-mesh-schemas chaos-mesh.org_podchaos.yaml chaos-mesh.org_networkchaos.yaml

@@ -19,8 +19,8 @@
 
 | Item | Content |
 |---|---|
-| Actual Result | — |
-| Status | Not Executed |
-| Remarks | Automated (API and screen level). Runs in CI on the pull request that adds it; this record is filled in from that run. Evidence: `backend/services/planning-core/tests/change/api/s3Cards.test.ts` › S3 cards: reconsidering the arrangements an approved change affects › S3-T15 a booking the change moved is replaced for the new period; approving the replacement releases it and its flag; `frontend/tests/replacements.test.tsx` › bookings an approved change flagged (S3-T15, S3-T16) › offers Find a replacement for a booking the change moved, searched and requested for the event's new period · Defect: — |
-| Executed By | — |
-| Date of Execution | — |
+| Actual Result | The approval answered 200 and B1 was CONFIRMED with its period flag set. The replacement request for V1, `D 15:00`–`D 18:00`, answered 201, Pending, with `replacesBookingId` B1, and B1 stayed CONFIRMED. VS's approval answered 200: B1 became RELEASED and the new booking CONFIRMED for `D 15:00`–`D 18:00` with no flag. The flag list showed no flag on B1 or the new booking and still showed B2 Requires Reconfirmation. On screen, the moved booking's row said "An approved change moved the event to Wednesday 2 December 2026, 14:00–18:00" and offered "Find a replacement"; the search and the form named "the event's old date and time" and started from 14:00–18:00, and the request sent `replacesBookingId`. |
+| Status | Pass |
+| Remarks | Automated (API and screen level) · Commit: 16c5c51 · CI run https://github.com/joass1/event-planning-and-venue-booking-system/actions/runs/42479388203 (integration tests and unit tests jobs) · Evidence: `backend/services/planning-core/tests/change/api/s3Cards.test.ts` › S3 cards: reconsidering the arrangements an approved change affects › S3-T15 a booking the change moved is replaced for the new period; approving the replacement releases it and its flag; `frontend/tests/replacements.test.tsx` › bookings an approved change flagged (S3-T15, S3-T16) › offers Find a replacement for a booking the change moved, searched and requested for the event's new period · Defect: — |
+| Executed By | Joash, via automated testing (CI) |
+| Date of Execution | 2026-11-08 |
